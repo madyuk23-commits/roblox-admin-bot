@@ -8,10 +8,10 @@ const path = require('path');
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const ALLOWED_USERS = (process.env.ALLOWED_USERS || '').split(',').map(id => id.trim()).filter(id => id.length > 0);
 const TEST_GUILD_ID = "1475122481026175059"; // ← ВАШ ID СЕРВЕРА!
+const LOG_CHANNEL_ID = "1502235930940145745";
 
 console.log(`🚀 Запуск бота...`);
 console.log(`📡 Сервер ID: ${TEST_GUILD_ID}`);
-console.log(`👥 Разрешённые пользователи: ${ALLOWED_USERS.length > 0 ? ALLOWED_USERS.join(', ') : '⚠️ НЕТ!'}`);
 
 // ============ ДАННЫЕ ============
 let robloxAdmins = {};
@@ -50,9 +50,28 @@ const RANK_COLORS = {
     "Генерал Полиции": { r: 255, g: 215, b: 0 }
 };
 
-// ============ ПАПКА DATA ============
+// ============ ПАПКА DATA (С ПРОВЕРКОЙ) ============
 const DATA_DIR = path.join(__dirname, 'data');
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+
+function ensureDataDir() {
+    try {
+        if (!fs.existsSync(DATA_DIR)) {
+            fs.mkdirSync(DATA_DIR, { recursive: true });
+            console.log('✅ Папка data создана');
+        } else {
+            const stats = fs.statSync(DATA_DIR);
+            if (!stats.isDirectory()) {
+                fs.unlinkSync(DATA_DIR);
+                fs.mkdirSync(DATA_DIR, { recursive: true });
+                console.log('✅ Папка data создана (был файл)');
+            }
+        }
+    } catch(e) {
+        console.error('❌ Ошибка при создании папки data:', e);
+    }
+}
+
+ensureDataDir();
 
 function loadData() {
     try {
@@ -112,7 +131,6 @@ async function getRobloxUserInfo(userId) {
     try { const res = await fetch(`https://users.roblox.com/v1/users/${userId}`); return await res.json(); } catch { return null; }
 }
 
-// ============ КОМАНДЫ ============
 const commandsData = [
     new SlashCommandBuilder().setName('addadmin').setDescription('Добавить администратора').addIntegerOption(opt => opt.setName('robloxid').setDescription('Roblox ID').setRequired(true)).addStringOption(opt => opt.setName('rank').setDescription('Ранг').setRequired(true).addChoices(...ADMIN_RANKS.map(r => ({ name: r, value: r })))),
     new SlashCommandBuilder().setName('removeadmin').setDescription('Удалить администратора').addIntegerOption(opt => opt.setName('robloxid').setDescription('Roblox ID').setRequired(true)),
@@ -135,28 +153,17 @@ async function registerCommands() {
         
         console.log(`✅ ЗАРЕГИСТРИРОВАНО ${result.length} КОМАНД:`);
         result.forEach(cmd => console.log(`   /${cmd.name}`));
-    } catch (error) {
-        console.error('❌ ОШИБКА:', error);
-    }
+    } catch (error) { console.error('❌ ОШИБКА:', error); }
 }
 
 client.once('ready', async () => {
     console.log(`✅ Бот ${client.user.tag} запущен!`);
     await registerCommands();
-    
-    // Отправляем приветствие в лог-канал
-    const channel = client.channels.cache.get(LOG_CHANNEL_ID);
-    if (channel) {
-        await channel.send(`✅ Бот запущен! Команды зарегистрированы.\nДоступные команды: ${commandsData.map(c => `/${c.name}`).join(', ')}`);
-    }
-    
     console.log('🎉 Бот готов!');
 });
 
 client.on('interactionCreate', async interaction => {
     if (!interaction.isCommand()) return;
-    
-    console.log(`📡 Получена команда: /${interaction.commandName} от ${interaction.user.tag}`);
     
     if (!ALLOWED_USERS.includes(interaction.user.id)) {
         return interaction.reply({ content: '⛔ У вас нет прав!', ephemeral: true });
