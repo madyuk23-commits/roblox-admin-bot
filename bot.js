@@ -9,12 +9,12 @@ const ALLOWED_USERS = (process.env.ALLOWED_USERS || '').split(',').map(id => id.
 // СПИСОК АДМИНИСТРАТОРОВ (ROBLOX ID)
 let robloxAdmins = [];
 
-// ============ СОЗДАНИЕ БОТА ============
+// ============ СОЗДАНИЕ БОТА (ТОЛЬКО РАЗРЕШЁННЫЕ ИНТЕНТЫ) ============
 const client = new Client({
     intents: [
-        GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.MessageContent
+        GatewayIntentBits.Guilds,           // Для работы с серверами
+        GatewayIntentBits.GuildMessages,    // Для чтения сообщений
+        GatewayIntentBits.MessageContent    // Для чтения содержимого сообщений
     ]
 });
 
