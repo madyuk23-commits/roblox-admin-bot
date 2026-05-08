@@ -6,17 +6,19 @@ const cors = require('cors');
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const ALLOWED_USERS = (process.env.ALLOWED_USERS || '').split(',').map(id => id.trim());
 const TEST_GUILD_ID = "1475122481026175059"; // ЗАМЕНИТЕ НА ID ВАШЕГО СЕРВЕРА
+const LOG_CHANNEL_ID = "1502235930940145745"; // ID канала для логов XP
 
 // ============ ДАННЫЕ ============
-let robloxAdmins = [];      // Список администраторов Roblox (ID)
-let userBalances = {};      // Балансы игроков { "robloxId": количество_монет }
+let robloxAdmins = [];      // Список администраторов Roblox
+let userBalances = {};      // Балансы монет { "robloxId": количество }
+let userXP = {};            // XP пользователей Discord { "discordId": количество_xp }
 
 // ============ API СЕРВЕР ДЛЯ ROBLOX ============
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-// ----- АДМИНКА -----
+// АДМИНКА
 app.get('/api/admins', (req, res) => {
     res.json({ admins: robloxAdmins });
 });
@@ -27,14 +29,14 @@ app.get('/api/check/:userId', (req, res) => {
     res.json({ userId, isAdmin });
 });
 
-// ----- БАНК (чтение для Roblox) -----
+// БАНК (чтение)
 app.get('/api/balance/:userId', (req, res) => {
     const userId = parseInt(req.params.userId);
     const balance = userBalances[userId] || 0;
     res.json({ userId, balance });
 });
 
-// ----- БАНК (обновление через Roblox) -----
+// БАНК (обновление через Roblox)
 app.post('/api/roblox/update-balance', (req, res) => {
     const { userId, amount } = req.body;
     if (!userId) return res.status(400).json({ error: 'userId обязателен' });
@@ -45,7 +47,7 @@ app.post('/api/roblox/update-balance', (req, res) => {
     res.json({ success: true, newBalance: userBalances[userId] });
 });
 
-// ----- БАНК (Discord команды с проверкой прав) -----
+// БАНК (Discord команды)
 app.post('/api/give-coins', (req, res) => {
     const { userId, amount, discordUserId } = req.body;
     if (!ALLOWED_USERS.includes(discordUserId)) return res.status(403).json({ error: 'Нет прав' });
@@ -81,15 +83,32 @@ async function getRobloxUserInfo(userId) {
     }
 }
 
-// ============ РЕГИСТРАЦИЯ КОМАНД ============
+// Функция отправки лога в канал
+async function sendLog(embed) {
+    const logChannel = client.channels.cache.get(LOG_CHANNEL_ID);
+    if (logChannel) {
+        await logChannel.send({ embeds: [embed] });
+    } else {
+        console.warn(`⚠️ Канал с ID ${LOG_CHANNEL_ID} не найден! Проверьте ID.`);
+    }
+}
+
+// ============ КОМАНДЫ ============
 const commandsData = [
+    // АДМИНКА
     new SlashCommandBuilder().setName('addadmin').setDescription('Добавить администратора в Roblox').addIntegerOption(opt => opt.setName('robloxid').setDescription('Roblox ID').setRequired(true)),
     new SlashCommandBuilder().setName('removeadmin').setDescription('Удалить администратора из Roblox').addIntegerOption(opt => opt.setName('robloxid').setDescription('Roblox ID').setRequired(true)),
     new SlashCommandBuilder().setName('adminlist').setDescription('Список администраторов'),
     new SlashCommandBuilder().setName('finduser').setDescription('Найти пользователя Roblox').addStringOption(opt => opt.setName('username').setDescription('Имя').setRequired(true)),
+    
+    // БАНК
     new SlashCommandBuilder().setName('bankgive').setDescription('Выдать монеты игроку').addIntegerOption(opt => opt.setName('robloxid').setDescription('Roblox ID').setRequired(true)).addIntegerOption(opt => opt.setName('amount').setDescription('Количество').setRequired(true)),
     new SlashCommandBuilder().setName('bankremove').setDescription('Забрать монеты у игрока').addIntegerOption(opt => opt.setName('robloxid').setDescription('Roblox ID').setRequired(true)).addIntegerOption(opt => opt.setName('amount').setDescription('Количество').setRequired(true)),
     new SlashCommandBuilder().setName('bankinfo').setDescription('Узнать баланс игрока').addIntegerOption(opt => opt.setName('robloxid').setDescription('Roblox ID').setRequired(true)),
+    
+    // XP СИСТЕМА (БЕЗ УРОВНЕЙ)
+    new SlashCommandBuilder().setName('xp_give').setDescription('Выдать XP пользователю').addUserOption(opt => opt.setName('user').setDescription('Пользователь Discord').setRequired(true)).addIntegerOption(opt => opt.setName('amount').setDescription('Количество XP').setRequired(true)).addStringOption(opt => opt.setName('reason').setDescription('Причина выдачи').setRequired(false)),
+    new SlashCommandBuilder().setName('xp_info').setDescription('Узнать сколько XP у пользователя').addUserOption(opt => opt.setName('user').setDescription('Пользователь Discord').setRequired(false)),
 ];
 
 async function registerCommands() {
@@ -120,7 +139,7 @@ client.on('interactionCreate', async interaction => {
     const robloxId = interaction.options.getInteger('robloxid');
     const amount = interaction.options.getInteger('amount');
     
-    // addadmin
+    // ========== АДМИНКА ==========
     if (commandName === 'addadmin') {
         if (robloxAdmins.includes(robloxId)) return interaction.reply({ embeds: [new EmbedBuilder().setColor(0xFFAA00).setTitle('⚠️ Уже в списке').setDescription(`ID ${robloxId} уже добавлен!`)] });
         robloxAdmins.push(robloxId);
@@ -128,7 +147,6 @@ client.on('interactionCreate', async interaction => {
         interaction.reply({ embeds: [new EmbedBuilder().setColor(0x00FF00).setTitle('✅ АДМИНИСТРАТОР ДОБАВЛЕН').setDescription(`**ID:** ${robloxId}\n**Имя:** ${info?.name || 'Неизвестно'}\n**Добавил:** ${interaction.user.tag}`).setTimestamp()] });
     }
     
-    // removeadmin
     if (commandName === 'removeadmin') {
         const idx = robloxAdmins.indexOf(robloxId);
         if (idx === -1) return interaction.reply({ embeds: [new EmbedBuilder().setColor(0xFFAA00).setTitle('⚠️ Не найден').setDescription(`ID ${robloxId} не найден!`)] });
@@ -137,7 +155,6 @@ client.on('interactionCreate', async interaction => {
         interaction.reply({ embeds: [new EmbedBuilder().setColor(0xFF0000).setTitle('❌ АДМИНИСТРАТОР УДАЛЁН').setDescription(`**ID:** ${robloxId}\n**Имя:** ${info?.name || 'Неизвестно'}\n**Удалил:** ${interaction.user.tag}`).setTimestamp()] });
     }
     
-    // adminlist
     if (commandName === 'adminlist') {
         if (!robloxAdmins.length) return interaction.reply({ embeds: [new EmbedBuilder().setColor(0xFFAA00).setTitle('📋 СПИСОК АДМИНИСТРАТОРОВ').setDescription('Список пуст!')] });
         const list = [];
@@ -148,7 +165,6 @@ client.on('interactionCreate', async interaction => {
         interaction.reply({ embeds: [new EmbedBuilder().setColor(0x00AAFF).setTitle('📋 СПИСОК АДМИНИСТРАТОРОВ').setDescription(list.join('\n')).addFields({ name: '📊 Всего', value: `${robloxAdmins.length}` })] });
     }
     
-    // finduser
     if (commandName === 'finduser') {
         const username = interaction.options.getString('username');
         try {
@@ -164,7 +180,7 @@ client.on('interactionCreate', async interaction => {
         } catch { interaction.reply({ embeds: [new EmbedBuilder().setColor(0xFF0000).setTitle('❌ Ошибка').setDescription('Ошибка поиска')] }); }
     }
     
-    // bankgive
+    // ========== БАНК ==========
     if (commandName === 'bankgive') {
         const current = userBalances[robloxId] || 0;
         userBalances[robloxId] = current + amount;
@@ -172,7 +188,6 @@ client.on('interactionCreate', async interaction => {
         interaction.reply({ embeds: [new EmbedBuilder().setColor(0x00FF00).setTitle('💰 МОНЕТЫ ВЫДАНЫ').setDescription(`**Игрок:** ${info?.name || robloxId}\n**Выдано:** ${amount} 💎\n**Новый баланс:** ${userBalances[robloxId]} 💎`).setTimestamp()] });
     }
     
-    // bankremove
     if (commandName === 'bankremove') {
         const current = userBalances[robloxId] || 0;
         userBalances[robloxId] = Math.max(0, current - amount);
@@ -180,11 +195,58 @@ client.on('interactionCreate', async interaction => {
         interaction.reply({ embeds: [new EmbedBuilder().setColor(0xFF0000).setTitle('💰 МОНЕТЫ ЗАБРАНЫ').setDescription(`**Игрок:** ${info?.name || robloxId}\n**Забрано:** ${amount} 💎\n**Новый баланс:** ${userBalances[robloxId]} 💎`).setTimestamp()] });
     }
     
-    // bankinfo
     if (commandName === 'bankinfo') {
         const balance = userBalances[robloxId] || 0;
         const info = await getRobloxUserInfo(robloxId);
         interaction.reply({ embeds: [new EmbedBuilder().setColor(0x00AAFF).setTitle('💰 БАЛАНС ИГРОКА').setDescription(`**Игрок:** ${info?.name || robloxId}\n**Баланс:** ${balance} 💎`).setTimestamp()] });
+    }
+    
+    // ========== XP СИСТЕМА (БЕЗ УРОВНЕЙ) ==========
+    if (commandName === 'xp_give') {
+        const targetUser = interaction.options.getUser('user');
+        const xpAmount = interaction.options.getInteger('amount');
+        const reason = interaction.options.getString('reason') || 'Без причины';
+        const giver = interaction.user;
+        
+        if (xpAmount <= 0) {
+            return interaction.reply({ embeds: [new EmbedBuilder().setColor(0xFF0000).setTitle('❌ Ошибка').setDescription('Количество XP должно быть больше 0!')] });
+        }
+        
+        // Добавляем XP
+        const currentXP = userXP[targetUser.id] || 0;
+        userXP[targetUser.id] = currentXP + xpAmount;
+        
+        // Ответ в канал
+        const embed = new EmbedBuilder()
+            .setColor(0x00FF00)
+            .setTitle('✨ XP ВЫДАНЫ')
+            .setDescription(`**Кому:** ${targetUser}\n**Количество:** ${xpAmount} XP\n**Причина:** ${reason}\n**Выдал:** ${giver.tag}`)
+            .setTimestamp();
+        
+        await interaction.reply({ embeds: [embed] });
+        
+        // Лог в канал
+        const logEmbed = new EmbedBuilder()
+            .setColor(0x00AAFF)
+            .setTitle('📝 ЛОГ ВЫДАЧИ XP')
+            .setDescription(`**Кому:** ${targetUser} (${targetUser.id})\n**Количество:** ${xpAmount} XP\n**Причина:** ${reason}\n**Выдал:** ${giver.tag} (${giver.id})`)
+            .setTimestamp();
+        
+        await sendLog(logEmbed);
+        console.log(`✨ Выдано ${xpAmount} XP пользователю ${targetUser.tag} (${targetUser.id}) по причине: ${reason}`);
+    }
+    
+    if (commandName === 'xp_info') {
+        const targetUser = interaction.options.getUser('user') || interaction.user;
+        const xp = userXP[targetUser.id] || 0;
+        
+        const embed = new EmbedBuilder()
+            .setColor(0x00AAFF)
+            .setTitle('📊 ИНФОРМАЦИЯ О XP')
+            .setDescription(`**Пользователь:** ${targetUser}\n**Всего XP:** ${xp}`)
+            .setTimestamp();
+        
+        await interaction.reply({ embeds: [embed] });
     }
 });
 
