@@ -2,6 +2,7 @@ const { Client, GatewayIntentBits, EmbedBuilder, SlashCommandBuilder, REST, Rout
 const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
+const path = require('path');
 
 // ============ НАСТРОЙКА ============
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
@@ -17,11 +18,9 @@ let robloxAdmins = {};
 let userBalances = {};
 let userPoliceRanks = {};
 
-// ============ РАНГИ (только для выбора в Discord, ограничено 25 вариантами) ============
+// ============ РАНГИ ============
 const ADMIN_RANKS = ["Модератор", "Администратор", "Старший Администратор", "Главный Администратор", "Основатель"];
-const POLICE_RANKS = ["Без ранга", "Рядовой", "Сержант", "Лейтенант", "Капитан", "Майор", "Полковник", "Генерал Полиции"];
-
-// Полные списки для отображения в игре (все ранги)
+const POLICE_RANKS_SELECT = ["Без ранга", "Рядовой", "Сержант", "Лейтенант", "Капитан", "Майор", "Полковник", "Генерал Полиции"];
 const ALL_POLICE_RANKS = ["Без ранга", "Рядовой", "Младший Сержант", "Сержант", "Старший Сержант", "Старшина", "Прапорщик", "Старший Прапорщик", "Младший Лейтенант", "Лейтенант", "Старший Лейтенант", "Капитан", "Майор", "Подполковник", "Полковник", "Генерал-Майор", "Генерал-Лейтенант", "Генерал-Полковник", "Генерал Полиции"];
 
 const RANK_COLORS = {
@@ -51,8 +50,8 @@ const RANK_COLORS = {
     "Генерал Полиции": { r: 255, g: 215, b: 0 }
 };
 
-// ============ ПРОВЕРКА ПАПКИ DATA ============
-const DATA_DIR = './data';
+// ============ ПАПКА DATA ============
+const DATA_DIR = path.join(__dirname, 'data');
 if (!fs.existsSync(DATA_DIR)) {
     fs.mkdirSync(DATA_DIR, { recursive: true });
     console.log('✅ Папка data создана');
@@ -60,18 +59,18 @@ if (!fs.existsSync(DATA_DIR)) {
 
 function loadData() {
     try {
-        if (fs.existsSync(`${DATA_DIR}/admins.json`)) robloxAdmins = JSON.parse(fs.readFileSync(`${DATA_DIR}/admins.json`, 'utf8'));
-        if (fs.existsSync(`${DATA_DIR}/balances.json`)) userBalances = JSON.parse(fs.readFileSync(`${DATA_DIR}/balances.json`, 'utf8'));
-        if (fs.existsSync(`${DATA_DIR}/police_ranks.json`)) userPoliceRanks = JSON.parse(fs.readFileSync(`${DATA_DIR}/police_ranks.json`, 'utf8'));
+        if (fs.existsSync(path.join(DATA_DIR, 'admins.json'))) robloxAdmins = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'admins.json'), 'utf8'));
+        if (fs.existsSync(path.join(DATA_DIR, 'balances.json'))) userBalances = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'balances.json'), 'utf8'));
+        if (fs.existsSync(path.join(DATA_DIR, 'police_ranks.json'))) userPoliceRanks = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'police_ranks.json'), 'utf8'));
         console.log('✅ Данные загружены');
     } catch(e) { console.error('Ошибка загрузки:', e); }
 }
 
 function saveData() {
     try {
-        fs.writeFileSync(`${DATA_DIR}/admins.json`, JSON.stringify(robloxAdmins, null, 2));
-        fs.writeFileSync(`${DATA_DIR}/balances.json`, JSON.stringify(userBalances, null, 2));
-        fs.writeFileSync(`${DATA_DIR}/police_ranks.json`, JSON.stringify(userPoliceRanks, null, 2));
+        fs.writeFileSync(path.join(DATA_DIR, 'admins.json'), JSON.stringify(robloxAdmins, null, 2));
+        fs.writeFileSync(path.join(DATA_DIR, 'balances.json'), JSON.stringify(userBalances, null, 2));
+        fs.writeFileSync(path.join(DATA_DIR, 'police_ranks.json'), JSON.stringify(userPoliceRanks, null, 2));
         console.log('✅ Данные сохранены');
     } catch(e) { console.error('Ошибка сохранения:', e); }
 }
@@ -92,7 +91,7 @@ app.get('/api/rank/:userId', (req, res) => {
     const policeRank = userPoliceRanks[id] || "Рядовой";
     const displayRank = adminRank ? `${adminRank} | ${policeRank}` : policeRank;
     const color = adminRank ? RANK_COLORS[adminRank] : RANK_COLORS[policeRank];
-    res.json({ rank: displayRank, color: color || { r: 128, g: 128, b: 128 }, isAdmin: adminRank ? true : false });
+    res.json({ rank: displayRank, color: color || { r: 128, g: 128, b: 128 }, isAdmin: !!adminRank });
 });
 app.post('/api/update-balance', (req, res) => { const { userId, amount } = req.body; userBalances[userId] = (userBalances[userId] || 0) + amount; saveData(); res.json({ success: true }); });
 app.post('/api/set-police-rank', (req, res) => { 
@@ -100,7 +99,7 @@ app.post('/api/set-police-rank', (req, res) => {
     if (ALL_POLICE_RANKS.includes(rank)) { 
         userPoliceRanks[userId] = rank; 
         saveData(); 
-        console.log(`👮‍♂️ Установлен ранг ${rank} для игрока ${userId}`);
+        console.log(`👮‍♂️ Установлен ранг ${rank} для ${userId}`);
         res.json({ success: true }); 
     } else { 
         res.status(400).json({ error: 'Неверный ранг' }); 
@@ -117,7 +116,6 @@ async function getRobloxUserInfo(userId) {
     try { const res = await fetch(`https://users.roblox.com/v1/users/${userId}`); return await res.json(); } catch { return null; }
 }
 
-// ============ КОМАНДЫ (с ограниченным числом вариантов) ============
 const commandsData = [
     new SlashCommandBuilder().setName('addadmin').setDescription('Добавить администратора').addIntegerOption(opt => opt.setName('robloxid').setRequired(true)).addStringOption(opt => opt.setName('rank').setRequired(true).addChoices(...ADMIN_RANKS.map(r => ({ name: r, value: r })))),
     new SlashCommandBuilder().setName('removeadmin').setDescription('Удалить администратора').addIntegerOption(opt => opt.setName('robloxid').setRequired(true)),
@@ -126,7 +124,7 @@ const commandsData = [
     new SlashCommandBuilder().setName('bankgive').setDescription('Выдать монеты').addIntegerOption(opt => opt.setName('robloxid').setRequired(true)).addIntegerOption(opt => opt.setName('amount').setRequired(true)),
     new SlashCommandBuilder().setName('bankremove').setDescription('Забрать монеты').addIntegerOption(opt => opt.setName('robloxid').setRequired(true)).addIntegerOption(opt => opt.setName('amount').setRequired(true)),
     new SlashCommandBuilder().setName('bankinfo').setDescription('Баланс игрока').addIntegerOption(opt => opt.setName('robloxid').setRequired(true)),
-    new SlashCommandBuilder().setName('gamerole').setDescription('Выдать ранг полиции').addIntegerOption(opt => opt.setName('robloxid').setRequired(true)).addStringOption(opt => opt.setName('rank').setRequired(true).addChoices(...POLICE_RANKS.map(r => ({ name: r, value: r }))))
+    new SlashCommandBuilder().setName('gamerole').setDescription('Выдать ранг полиции').addIntegerOption(opt => opt.setName('robloxid').setRequired(true)).addStringOption(opt => opt.setName('rank').setRequired(true).addChoices(...POLICE_RANKS_SELECT.map(r => ({ name: r, value: r }))))
 ];
 
 async function registerCommands() {
@@ -190,7 +188,7 @@ client.on('interactionCreate', async interaction => {
         const rank = interaction.options.getString('rank'); 
         userPoliceRanks[robloxId] = rank; 
         saveData(); 
-        console.log(`👮‍♂️ Discord: Выдан ранг ${rank} игроку ${robloxId}`);
+        console.log(`👮‍♂️ Выдан ранг ${rank} игроку ${robloxId}`);
         const info = await getRobloxUserInfo(robloxId); 
         interaction.reply({ content: `👮‍♂️ ${info?.name || robloxId} получил ранг **${rank}**!`, ephemeral: true }); 
     }
