@@ -11,7 +11,6 @@ const LOG_CHANNEL_ID = "1502235930940145745";
 
 console.log(`🚀 Запуск бота...`);
 console.log(`📡 Сервер ID: ${TEST_GUILD_ID}`);
-console.log(`👥 Разрешённые пользователи: ${ALLOWED_USERS.length > 0 ? ALLOWED_USERS.join(', ') : '⚠️ НЕТ! Добавьте ID в переменную ALLOWED_USERS на Render'}`);
 
 // ============ ДАННЫЕ ============
 let robloxAdmins = {};
@@ -20,7 +19,7 @@ let userPoliceRanks = {};
 
 // ============ РАНГИ ============
 const ADMIN_RANKS = ["Модератор", "Администратор", "Старший Администратор", "Главный Администратор", "Основатель"];
-const POLICE_RANKS = ["Рядовой", "Младший Сержант", "Сержант", "Старший Сержант", "Старшина", "Прапорщик", "Старший Прапорщик", "Младший Лейтенант", "Лейтенант", "Старший Лейтенант", "Капитан", "Майор", "Подполковник", "Полковник", "Генерал-Майор", "Генерал-Лейтенант", "Генерал-Полковник", "Генерал Полиции"];
+const POLICE_RANKS = ["Без ранга", "Рядовой", "Младший Сержант", "Сержант", "Старший Сержант", "Старшина", "Прапорщик", "Старший Прапорщик", "Младший Лейтенант", "Лейтенант", "Старший Лейтенант", "Капитан", "Майор", "Подполковник", "Полковник", "Генерал-Майор", "Генерал-Лейтенант", "Генерал-Полковник", "Генерал Полиции"];
 
 const RANK_COLORS = {
     "Модератор": { r: 0, g: 255, b: 0 },
@@ -28,6 +27,7 @@ const RANK_COLORS = {
     "Старший Администратор": { r: 255, g: 100, b: 0 },
     "Главный Администратор": { r: 255, g: 0, b: 0 },
     "Основатель": { r: 255, g: 215, b: 0 },
+    "Без ранга": { r: 128, g: 128, b: 128 },
     "Рядовой": { r: 128, g: 128, b: 128 },
     "Младший Сержант": { r: 100, g: 149, b: 237 },
     "Сержант": { r: 70, g: 130, b: 180 },
@@ -73,7 +73,7 @@ function saveData() {
 loadData();
 setInterval(saveData, 60 * 1000);
 
-// ============ API СЕРВЕР ДЛЯ ROBLOX ============
+// ============ API СЕРВЕР ============
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -86,7 +86,7 @@ app.get('/api/rank/:userId', (req, res) => {
     const policeRank = userPoliceRanks[id] || "Рядовой";
     const displayRank = adminRank ? `${adminRank} | ${policeRank}` : policeRank;
     const color = adminRank ? RANK_COLORS[adminRank] : RANK_COLORS[policeRank];
-    res.json({ rank: displayRank, color: color || { r: 128, g: 128, b: 128 } });
+    res.json({ rank: displayRank, color: color || { r: 128, g: 128, b: 128 }, isAdmin: adminRank ? true : false });
 });
 app.post('/api/update-balance', (req, res) => { const { userId, amount } = req.body; userBalances[userId] = (userBalances[userId] || 0) + amount; saveData(); res.json({ success: true }); });
 app.post('/api/set-police-rank', (req, res) => { const { userId, rank } = req.body; if (POLICE_RANKS.includes(rank)) { userPoliceRanks[userId] = rank; saveData(); res.json({ success: true }); } else { res.status(400).json({ error: 'Неверный ранг' }); } });
@@ -101,7 +101,6 @@ async function getRobloxUserInfo(userId) {
     try { const res = await fetch(`https://users.roblox.com/v1/users/${userId}`); return await res.json(); } catch { return null; }
 }
 
-// ============ КОМАНДЫ (ТОЛЬКО INTEGER И STRING) ============
 const commandsData = [
     new SlashCommandBuilder()
         .setName('addadmin')
@@ -159,7 +158,7 @@ async function registerCommands() {
         console.log('⏳ Жду 2 секунды...');
         await new Promise(r => setTimeout(r, 2000));
         
-        console.log('📝 Регистрирую команды для сервера...');
+        console.log('📝 Регистрирую команды...');
         const result = await rest.put(Routes.applicationGuildCommands(client.user.id, TEST_GUILD_ID), { body: commandsData });
         
         console.log(`✅ ЗАРЕГИСТРИРОВАНО ${result.length} КОМАНД:`);
@@ -175,7 +174,6 @@ client.once('ready', async () => {
     setInterval(registerCommands, 60 * 60 * 1000);
 });
 
-// ============ ОБРАБОТЧИК КОМАНД ============
 client.on('interactionCreate', async interaction => {
     if (!interaction.isCommand()) return;
     
@@ -202,7 +200,7 @@ client.on('interactionCreate', async interaction => {
     }
     else if (commandName === 'adminlist') {
         const ids = Object.keys(robloxAdmins);
-        if (!ids.length) return interaction.reply({ content: '📋 Список администраторов пуст!', ephemeral: true });
+        if (!ids.length) return interaction.reply({ content: '📋 Список пуст!', ephemeral: true });
         const list = [];
         for (const id of ids) {
             const info = await getRobloxUserInfo(parseInt(id));
