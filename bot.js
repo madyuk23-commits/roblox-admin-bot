@@ -5,7 +5,7 @@ const cors = require('cors');
 // ============ НАСТРОЙКА ============
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const ALLOWED_USERS = (process.env.ALLOWED_USERS || '').split(',').map(id => id.trim());
-const TEST_GUILD_ID = "ВАШ_ID_СЕРВЕРА"; // ЗАМЕНИТЕ НА ВАШ ID
+const TEST_GUILD_ID = "1475122481026175059"; // ЗАМЕНИТЕ НА ВАШ ID
 
 // ============ ДАННЫЕ (в памяти) ============
 let robloxAdmins = [];      // Список администраторов Roblox (ID)
