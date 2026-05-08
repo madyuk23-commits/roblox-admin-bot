@@ -6,7 +6,7 @@ const fs = require('fs');
 // ============ НАСТРОЙКА ============
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const ALLOWED_USERS = (process.env.ALLOWED_USERS || '').split(',').map(id => id.trim()).filter(id => id.length > 0);
-const TEST_GUILD_ID = "1475122481026175059"; // ← ВАШ ID СЕРВЕРА!
+const TEST_GUILD_ID = "1475122481026175059";
 const LOG_CHANNEL_ID = "1502235930940145745";
 
 // ============ ДАННЫЕ ============
@@ -46,7 +46,7 @@ function saveData() {
 }
 
 loadData();
-setInterval(saveData, 60 * 1000); // Сохраняем каждую минуту
+setInterval(saveData, 60 * 1000);
 
 // ============ API СЕРВЕР ============
 const app = express();
