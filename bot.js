@@ -5,18 +5,18 @@ const cors = require('cors');
 // ============ НАСТРОЙКА ============
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const ALLOWED_USERS = (process.env.ALLOWED_USERS || '').split(',').map(id => id.trim());
-const TEST_GUILD_ID = "1475122481026175059"; // ЗАМЕНИТЕ НА ВАШ ID
+const TEST_GUILD_ID = "1475122481026175059"; // ЗАМЕНИТЕ НА ID ВАШЕГО СЕРВЕРА
 
-// ============ ДАННЫЕ (в памяти) ============
+// ============ ДАННЫЕ ============
 let robloxAdmins = [];      // Список администраторов Roblox (ID)
-let userBalances = {};      // { "robloxId": количество_монет }
+let userBalances = {};      // Балансы игроков { "robloxId": количество_монет }
 
 // ============ API СЕРВЕР ДЛЯ ROBLOX ============
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-// ---------- АДМИНКА ----------
+// ----- АДМИНКА -----
 app.get('/api/admins', (req, res) => {
     res.json({ admins: robloxAdmins });
 });
@@ -27,103 +27,69 @@ app.get('/api/check/:userId', (req, res) => {
     res.json({ userId, isAdmin });
 });
 
-// ---------- БАНКОВСКАЯ СИСТЕМА ----------
+// ----- БАНК (чтение для Roblox) -----
 app.get('/api/balance/:userId', (req, res) => {
     const userId = parseInt(req.params.userId);
     const balance = userBalances[userId] || 0;
     res.json({ userId, balance });
 });
 
-app.post('/api/give-coins', (req, res) => {
-    const { userId, amount, discordUserId } = req.body;
-    
-    if (!ALLOWED_USERS.includes(discordUserId)) {
-        return res.status(403).json({ error: 'Нет прав' });
-    }
+// ----- БАНК (обновление через Roblox) -----
+app.post('/api/roblox/update-balance', (req, res) => {
+    const { userId, amount } = req.body;
+    if (!userId) return res.status(400).json({ error: 'userId обязателен' });
     
     const current = userBalances[userId] || 0;
     userBalances[userId] = current + amount;
+    console.log(`💰 Roblox обновил баланс ${userId}: ${current} → ${userBalances[userId]}`);
+    res.json({ success: true, newBalance: userBalances[userId] });
+});
+
+// ----- БАНК (Discord команды с проверкой прав) -----
+app.post('/api/give-coins', (req, res) => {
+    const { userId, amount, discordUserId } = req.body;
+    if (!ALLOWED_USERS.includes(discordUserId)) return res.status(403).json({ error: 'Нет прав' });
     
+    const current = userBalances[userId] || 0;
+    userBalances[userId] = current + amount;
     res.json({ success: true, newBalance: userBalances[userId] });
 });
 
 app.post('/api/remove-coins', (req, res) => {
     const { userId, amount, discordUserId } = req.body;
-    
-    if (!ALLOWED_USERS.includes(discordUserId)) {
-        return res.status(403).json({ error: 'Нет прав' });
-    }
+    if (!ALLOWED_USERS.includes(discordUserId)) return res.status(403).json({ error: 'Нет прав' });
     
     const current = userBalances[userId] || 0;
     userBalances[userId] = Math.max(0, current - amount);
-    
     res.json({ success: true, newBalance: userBalances[userId] });
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-    console.log(`✅ API сервер запущен на порту ${PORT}`);
-});
+app.listen(PORT, () => console.log(`✅ API сервер запущен на порту ${PORT}`));
 
 // ============ DISCORD БОТ ============
 const client = new Client({
-    intents: [
-        GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.MessageContent,
-    ],
+    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
 });
 
-// ============ ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ============
 async function getRobloxUserInfo(userId) {
     try {
-        const response = await fetch(`https://users.roblox.com/v1/users/${userId}`);
-        const data = await response.json();
-        return data;
-    } catch(e) {
+        const res = await fetch(`https://users.roblox.com/v1/users/${userId}`);
+        return await res.json();
+    } catch {
         return null;
     }
 }
 
-// ============ РЕГИСТРАЦИЯ ВСЕХ КОМАНД ============
+// ============ РЕГИСТРАЦИЯ КОМАНД ============
 const commandsData = [
-    // АДМИНКА
-    new SlashCommandBuilder()
-        .setName('addadmin')
-        .setDescription('Добавить администратора в Roblox админку')
-        .addIntegerOption(option => option.setName('robloxid').setDescription('Roblox User ID').setRequired(true)),
-    
-    new SlashCommandBuilder()
-        .setName('removeadmin')
-        .setDescription('Удалить администратора из Roblox админки')
-        .addIntegerOption(option => option.setName('robloxid').setDescription('Roblox User ID').setRequired(true)),
-    
-    new SlashCommandBuilder()
-        .setName('adminlist')
-        .setDescription('Показать список администраторов'),
-    
-    new SlashCommandBuilder()
-        .setName('finduser')
-        .setDescription('Найти пользователя Roblox по имени')
-        .addStringOption(option => option.setName('username').setDescription('Имя пользователя Roblox').setRequired(true)),
-    
-    // БАНКОВСКАЯ СИСТЕМА
-    new SlashCommandBuilder()
-        .setName('bankgive')
-        .setDescription('Выдать монеты игроку')
-        .addIntegerOption(option => option.setName('robloxid').setDescription('Roblox User ID').setRequired(true))
-        .addIntegerOption(option => option.setName('amount').setDescription('Количество монет').setRequired(true)),
-    
-    new SlashCommandBuilder()
-        .setName('bankremove')
-        .setDescription('Забрать монеты у игрока')
-        .addIntegerOption(option => option.setName('robloxid').setDescription('Roblox User ID').setRequired(true))
-        .addIntegerOption(option => option.setName('amount').setDescription('Количество монет').setRequired(true)),
-    
-    new SlashCommandBuilder()
-        .setName('bankinfo')
-        .setDescription('Узнать баланс игрока')
-        .addIntegerOption(option => option.setName('robloxid').setDescription('Roblox User ID').setRequired(true)),
+    new SlashCommandBuilder().setName('addadmin').setDescription('Добавить администратора в Roblox').addIntegerOption(opt => opt.setName('robloxid').setDescription('Roblox ID').setRequired(true)),
+    new SlashCommandBuilder().setName('removeadmin').setDescription('Удалить администратора из Roblox').addIntegerOption(opt => opt.setName('robloxid').setDescription('Roblox ID').setRequired(true)),
+    new SlashCommandBuilder().setName('adminlist').setDescription('Список администраторов'),
+    new SlashCommandBuilder().setName('finduser').setDescription('Найти пользователя Roblox').addStringOption(opt => opt.setName('username').setDescription('Имя').setRequired(true)),
+    new SlashCommandBuilder().setName('bankgive').setDescription('Выдать монеты игроку').addIntegerOption(opt => opt.setName('robloxid').setDescription('Roblox ID').setRequired(true)).addIntegerOption(opt => opt.setName('amount').setDescription('Количество').setRequired(true)),
+    new SlashCommandBuilder().setName('bankremove').setDescription('Забрать монеты у игрока').addIntegerOption(opt => opt.setName('robloxid').setDescription('Roblox ID').setRequired(true)).addIntegerOption(opt => opt.setName('amount').setDescription('Количество').setRequired(true)),
+    new SlashCommandBuilder().setName('bankinfo').setDescription('Узнать баланс игрока').addIntegerOption(opt => opt.setName('robloxid').setDescription('Roblox ID').setRequired(true)),
 ];
 
 async function registerCommands() {
@@ -132,203 +98,95 @@ async function registerCommands() {
         console.log('🧹 Очищаю старые команды...');
         await rest.put(Routes.applicationCommands(client.user.id), { body: [] });
         await rest.put(Routes.applicationGuildCommands(client.user.id, TEST_GUILD_ID), { body: [] });
-        
         console.log('📝 Регистрирую новые команды...');
         await rest.put(Routes.applicationGuildCommands(client.user.id, TEST_GUILD_ID), { body: commandsData });
-        
-        console.log('✅ Все команды зарегистрированы!');
-    } catch (error) {
-        console.error('❌ Ошибка регистрации команд:', error);
-    }
+        console.log('✅ Команды зарегистрированы!');
+    } catch (e) { console.error('❌ Ошибка:', e); }
 }
 
-// ============ ЗАПУСК БОТА ============
 client.once('ready', async () => {
     console.log(`✅ Бот ${client.user.tag} запущен!`);
     await registerCommands();
-    console.log(`🤖 Бот готов на сервере: ${client.guilds.cache.get(TEST_GUILD_ID)?.name || 'неизвестно'}`);
 });
 
 // ============ ОБРАБОТЧИК КОМАНД ============
 client.on('interactionCreate', async interaction => {
     if (!interaction.isCommand()) return;
-    
-    // Проверка прав (только владельцы)
     if (!ALLOWED_USERS.includes(interaction.user.id)) {
-        const embed = new EmbedBuilder()
-            .setColor(0xFF0000)
-            .setTitle('⛔ ДОСТУП ЗАПРЕЩЁН')
-            .setDescription('У вас нет прав на использование этого бота!')
-            .setTimestamp();
-        return interaction.reply({ embeds: [embed], ephemeral: true });
+        return interaction.reply({ embeds: [new EmbedBuilder().setColor(0xFF0000).setTitle('⛔ ДОСТУП ЗАПРЕЩЁН')], ephemeral: true });
     }
     
     const { commandName } = interaction;
     const robloxId = interaction.options.getInteger('robloxid');
     const amount = interaction.options.getInteger('amount');
     
-    // ========== АДМИНКА ==========
+    // addadmin
     if (commandName === 'addadmin') {
-        if (robloxAdmins.includes(robloxId)) {
-            const embed = new EmbedBuilder()
-                .setColor(0xFFAA00)
-                .setTitle('⚠️ Уже в списке')
-                .setDescription(`Администратор с ID **${robloxId}** уже добавлен!`)
-                .setTimestamp();
-            return interaction.reply({ embeds: [embed] });
-        }
-        
+        if (robloxAdmins.includes(robloxId)) return interaction.reply({ embeds: [new EmbedBuilder().setColor(0xFFAA00).setTitle('⚠️ Уже в списке').setDescription(`ID ${robloxId} уже добавлен!`)] });
         robloxAdmins.push(robloxId);
-        const userInfo = await getRobloxUserInfo(robloxId);
-        const username = userInfo ? userInfo.name : 'Неизвестно';
-        
-        const embed = new EmbedBuilder()
-            .setColor(0x00FF00)
-            .setTitle('✅ АДМИНИСТРАТОР ДОБАВЛЕН')
-            .setDescription(`**Roblox ID:** ${robloxId}\n**Имя:** ${username}\n**Добавил:** ${interaction.user.tag}`)
-            .setTimestamp()
-            .setFooter({ text: 'Изменения вступят в силу через 1 минуту' });
-        
-        await interaction.reply({ embeds: [embed] });
-        console.log(`✅ Добавлен администратор: ${robloxId} (${username})`);
+        const info = await getRobloxUserInfo(robloxId);
+        interaction.reply({ embeds: [new EmbedBuilder().setColor(0x00FF00).setTitle('✅ АДМИНИСТРАТОР ДОБАВЛЕН').setDescription(`**ID:** ${robloxId}\n**Имя:** ${info?.name || 'Неизвестно'}\n**Добавил:** ${interaction.user.tag}`).setTimestamp()] });
     }
     
+    // removeadmin
     if (commandName === 'removeadmin') {
-        const index = robloxAdmins.indexOf(robloxId);
-        if (index === -1) {
-            const embed = new EmbedBuilder()
-                .setColor(0xFFAA00)
-                .setTitle('⚠️ Не найден')
-                .setDescription(`Администратор с ID **${robloxId}** не найден в списке!`)
-                .setTimestamp();
-            return interaction.reply({ embeds: [embed] });
-        }
-        
-        robloxAdmins.splice(index, 1);
-        const userInfo = await getRobloxUserInfo(robloxId);
-        const username = userInfo ? userInfo.name : 'Неизвестно';
-        
-        const embed = new EmbedBuilder()
-            .setColor(0xFF0000)
-            .setTitle('❌ АДМИНИСТРАТОР УДАЛЁН')
-            .setDescription(`**Roblox ID:** ${robloxId}\n**Имя:** ${username}\n**Удалил:** ${interaction.user.tag}`)
-            .setTimestamp()
-            .setFooter({ text: 'Изменения вступят в силу через 1 минуту' });
-        
-        await interaction.reply({ embeds: [embed] });
-        console.log(`❌ Удалён администратор: ${robloxId} (${username})`);
+        const idx = robloxAdmins.indexOf(robloxId);
+        if (idx === -1) return interaction.reply({ embeds: [new EmbedBuilder().setColor(0xFFAA00).setTitle('⚠️ Не найден').setDescription(`ID ${robloxId} не найден!`)] });
+        robloxAdmins.splice(idx, 1);
+        const info = await getRobloxUserInfo(robloxId);
+        interaction.reply({ embeds: [new EmbedBuilder().setColor(0xFF0000).setTitle('❌ АДМИНИСТРАТОР УДАЛЁН').setDescription(`**ID:** ${robloxId}\n**Имя:** ${info?.name || 'Неизвестно'}\n**Удалил:** ${interaction.user.tag}`).setTimestamp()] });
     }
     
+    // adminlist
     if (commandName === 'adminlist') {
-        if (robloxAdmins.length === 0) {
-            const embed = new EmbedBuilder()
-                .setColor(0xFFAA00)
-                .setTitle('📋 СПИСОК АДМИНИСТРАТОРОВ')
-                .setDescription('Список пуст!')
-                .setTimestamp();
-            return interaction.reply({ embeds: [embed] });
-        }
-        
-        const adminListWithNames = [];
+        if (!robloxAdmins.length) return interaction.reply({ embeds: [new EmbedBuilder().setColor(0xFFAA00).setTitle('📋 СПИСОК АДМИНИСТРАТОРОВ').setDescription('Список пуст!')] });
+        const list = [];
         for (const id of robloxAdmins) {
-            const userInfo = await getRobloxUserInfo(id);
-            const name = userInfo ? userInfo.name : 'Неизвестно';
-            adminListWithNames.push(`🔹 **${name}** (ID: ${id})`);
+            const info = await getRobloxUserInfo(id);
+            list.push(`🔹 **${info?.name || 'Неизвестно'}** (ID: ${id})`);
         }
-        
-        const embed = new EmbedBuilder()
-            .setColor(0x00AAFF)
-            .setTitle('📋 СПИСОК АДМИНИСТРАТОРОВ')
-            .setDescription(adminListWithNames.join('\n'))
-            .addFields({ name: '📊 Всего администраторов', value: `${robloxAdmins.length}`, inline: true })
-            .setTimestamp();
-        
-        await interaction.reply({ embeds: [embed] });
+        interaction.reply({ embeds: [new EmbedBuilder().setColor(0x00AAFF).setTitle('📋 СПИСОК АДМИНИСТРАТОРОВ').setDescription(list.join('\n')).addFields({ name: '📊 Всего', value: `${robloxAdmins.length}` })] });
     }
     
+    // finduser
     if (commandName === 'finduser') {
         const username = interaction.options.getString('username');
-        
         try {
-            const response = await fetch(`https://users.roblox.com/v1/users/search?keyword=${encodeURIComponent(username)}&limit=1`);
-            const data = await response.json();
-            
-            if (data.data && data.data.length > 0) {
+            const res = await fetch(`https://users.roblox.com/v1/users/search?keyword=${encodeURIComponent(username)}&limit=1`);
+            const data = await res.json();
+            if (data.data?.length) {
                 const user = data.data[0];
                 const isAdmin = robloxAdmins.includes(user.id);
-                
-                const embed = new EmbedBuilder()
-                    .setColor(isAdmin ? 0x00FF00 : 0xAAAAAA)
-                    .setTitle('🔍 РЕЗУЛЬТАТ ПОИСКА')
-                    .setDescription(`**Имя:** ${user.name}\n**ID:** ${user.id}\n**Статус:** ${isAdmin ? '✅ Администратор' : '❌ Не администратор'}\n**Ссылка:** https://www.roblox.com/users/${user.id}/profile`)
-                    .setTimestamp();
-                
-                await interaction.reply({ embeds: [embed] });
+                interaction.reply({ embeds: [new EmbedBuilder().setColor(isAdmin ? 0x00FF00 : 0xAAAAAA).setTitle('🔍 РЕЗУЛЬТАТ ПОИСКА').setDescription(`**Имя:** ${user.name}\n**ID:** ${user.id}\n**Статус:** ${isAdmin ? '✅ Администратор' : '❌ Не администратор'}\n**Ссылка:** https://www.roblox.com/users/${user.id}/profile`)] });
             } else {
-                const embed = new EmbedBuilder()
-                    .setColor(0xFF0000)
-                    .setTitle('❌ Не найдено')
-                    .setDescription(`Пользователь с именем **${username}** не найден!`)
-                    .setTimestamp();
-                
-                await interaction.reply({ embeds: [embed] });
+                interaction.reply({ embeds: [new EmbedBuilder().setColor(0xFF0000).setTitle('❌ Не найдено').setDescription(`Пользователь ${username} не найден!`)] });
             }
-        } catch(e) {
-            console.error("Ошибка поиска пользователя:", e);
-            const embed = new EmbedBuilder()
-                .setColor(0xFF0000)
-                .setTitle('❌ Ошибка')
-                .setDescription('Не удалось выполнить поиск!')
-                .setTimestamp();
-            await interaction.reply({ embeds: [embed] });
-        }
+        } catch { interaction.reply({ embeds: [new EmbedBuilder().setColor(0xFF0000).setTitle('❌ Ошибка').setDescription('Ошибка поиска')] }); }
     }
     
-    // ========== БАНКОВСКАЯ СИСТЕМА ==========
+    // bankgive
     if (commandName === 'bankgive') {
         const current = userBalances[robloxId] || 0;
         userBalances[robloxId] = current + amount;
-        const userInfo = await getRobloxUserInfo(robloxId);
-        
-        const embed = new EmbedBuilder()
-            .setColor(0x00FF00)
-            .setTitle('💰 МОНЕТЫ ВЫДАНЫ')
-            .setDescription(`**Игрок:** ${userInfo?.name || robloxId}\n**Выдано:** ${amount} 💎\n**Новый баланс:** ${userBalances[robloxId]} 💎`)
-            .setTimestamp();
-        
-        await interaction.reply({ embeds: [embed] });
-        console.log(`💰 Выдано ${amount} монет игроку ${robloxId}`);
+        const info = await getRobloxUserInfo(robloxId);
+        interaction.reply({ embeds: [new EmbedBuilder().setColor(0x00FF00).setTitle('💰 МОНЕТЫ ВЫДАНЫ').setDescription(`**Игрок:** ${info?.name || robloxId}\n**Выдано:** ${amount} 💎\n**Новый баланс:** ${userBalances[robloxId]} 💎`).setTimestamp()] });
     }
     
+    // bankremove
     if (commandName === 'bankremove') {
         const current = userBalances[robloxId] || 0;
         userBalances[robloxId] = Math.max(0, current - amount);
-        const userInfo = await getRobloxUserInfo(robloxId);
-        
-        const embed = new EmbedBuilder()
-            .setColor(0xFF0000)
-            .setTitle('💰 МОНЕТЫ ЗАБРАНЫ')
-            .setDescription(`**Игрок:** ${userInfo?.name || robloxId}\n**Забрано:** ${amount} 💎\n**Новый баланс:** ${userBalances[robloxId]} 💎`)
-            .setTimestamp();
-        
-        await interaction.reply({ embeds: [embed] });
-        console.log(`💰 Забрано ${amount} монет у игрока ${robloxId}`);
+        const info = await getRobloxUserInfo(robloxId);
+        interaction.reply({ embeds: [new EmbedBuilder().setColor(0xFF0000).setTitle('💰 МОНЕТЫ ЗАБРАНЫ').setDescription(`**Игрок:** ${info?.name || robloxId}\n**Забрано:** ${amount} 💎\n**Новый баланс:** ${userBalances[robloxId]} 💎`).setTimestamp()] });
     }
     
+    // bankinfo
     if (commandName === 'bankinfo') {
         const balance = userBalances[robloxId] || 0;
-        const userInfo = await getRobloxUserInfo(robloxId);
-        
-        const embed = new EmbedBuilder()
-            .setColor(0x00AAFF)
-            .setTitle('💰 БАЛАНС ИГРОКА')
-            .setDescription(`**Игрок:** ${userInfo?.name || robloxId}\n**Баланс:** ${balance} 💎`)
-            .setTimestamp();
-        
-        await interaction.reply({ embeds: [embed] });
+        const info = await getRobloxUserInfo(robloxId);
+        interaction.reply({ embeds: [new EmbedBuilder().setColor(0x00AAFF).setTitle('💰 БАЛАНС ИГРОКА').setDescription(`**Игрок:** ${info?.name || robloxId}\n**Баланс:** ${balance} 💎`).setTimestamp()] });
     }
 });
 
-// ============ ЗАПУСК ============
 client.login(DISCORD_TOKEN);
 console.log('🚀 Бот запускается...');
