@@ -7,7 +7,10 @@ const path = require('path');
 // ============ НАСТРОЙКА ============
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const ALLOWED_USERS = (process.env.ALLOWED_USERS || '').split(',').map(id => id.trim()).filter(id => id.length > 0);
-const TEST_GUILD_ID = "1502941635154149480"; // ← ВАШ ID СЕРВЕРА!
+
+// ★★★★★ ВСТАВЬТЕ СЮДА ВАШ РЕАЛЬНЫЙ ID СЕРВЕРА (ТОЛЬКО ЦИФРЫ!) ★★★★★
+const TEST_GUILD_ID = "1502941635154149480"; // ← ЗАМЕНИТЕ НА ВАШ ID!
+// ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
 
 console.log(`🚀 Запуск бота...`);
 console.log(`📡 Сервер ID: ${TEST_GUILD_ID}`);
@@ -29,11 +32,7 @@ const RANK_COLORS = {
 
 // ============ ФУНКЦИИ ДЛЯ XP И УРОВНЕЙ ============
 function getLevel(xp) {
-    return math.floor(xp / 100) + 1;
-}
-
-function getXPForLevel(level) {
-    return (level - 1) * 100;
+    return Math.floor(xp / 100) + 1;
 }
 
 function addExp(userId, amount) {
@@ -141,11 +140,15 @@ async function registerCommands() {
     try {
         console.log('🧹 Очищаю глобальные команды...');
         await rest.put(Routes.applicationCommands(client.user.id), { body: [] });
+        
         console.log('📝 Регистрирую команды для сервера...');
         const result = await rest.put(Routes.applicationGuildCommands(client.user.id, TEST_GUILD_ID), { body: commandsData });
+        
         console.log(`✅ ЗАРЕГИСТРИРОВАНО ${result.length} КОМАНД:`);
         result.forEach(cmd => console.log(`   /${cmd.name}`));
-    } catch (error) { console.error('❌ ОШИБКА:', error); }
+    } catch (error) {
+        console.error('❌ ОШИБКА:', error);
+    }
 }
 
 client.once('ready', async () => {
