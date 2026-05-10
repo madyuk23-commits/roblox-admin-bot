@@ -7,7 +7,7 @@ const path = require('path');
 // ============ НАСТРОЙКА ============
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const ALLOWED_USERS = (process.env.ALLOWED_USERS || '').split(',').map(id => id.trim()).filter(id => id.length > 0);
-const TEST_GUILD_ID = "ВАШ_ID_СЕРВЕРА"; // ← ВАШ ID СЕРВЕРА!
+const TEST_GUILD_ID = "1502941635154149480"; // ← ВАШ ID СЕРВЕРА!
 
 console.log(`🚀 Запуск бота...`);
 console.log(`📡 Сервер ID: ${TEST_GUILD_ID}`);
