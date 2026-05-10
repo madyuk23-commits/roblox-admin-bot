@@ -7,50 +7,53 @@ const path = require('path');
 // ============ НАСТРОЙКА ============
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const ALLOWED_USERS = (process.env.ALLOWED_USERS || '').split(',').map(id => id.trim()).filter(id => id.length > 0);
-const TEST_GUILD_ID = "1475122481026175059"; // ← ВАШ ID СЕРВЕРА!
-const LOG_CHANNEL_ID = "1502235930940145745";
+const TEST_GUILD_ID = "ВАШ_ID_СЕРВЕРА"; // ← ВАШ ID СЕРВЕРА!
 
 console.log(`🚀 Запуск бота...`);
 console.log(`📡 Сервер ID: ${TEST_GUILD_ID}`);
 
 // ============ ДАННЫЕ ============
 let robloxAdmins = {};
-let userBalances = {};
-let userPoliceRanks = {};
+let userExp = {};
 
-// ============ РАНГИ ============
+// ============ АДМИН РАНГИ ============
 const ADMIN_RANKS = ["Модератор", "Администратор", "Старший Администратор", "Главный Администратор", "Основатель"];
-const POLICE_RANKS_SELECT = ["Без ранга", "Рядовой", "Сержант", "Лейтенант", "Капитан", "Майор", "Полковник", "Генерал Полиции"];
-const ALL_POLICE_RANKS = ["Без ранга", "Рядовой", "Младший Сержант", "Сержант", "Старший Сержант", "Старшина", "Прапорщик", "Старший Прапорщик", "Младший Лейтенант", "Лейтенант", "Старший Лейтенант", "Капитан", "Майор", "Подполковник", "Полковник", "Генерал-Майор", "Генерал-Лейтенант", "Генерал-Полковник", "Генерал Полиции"];
 
 const RANK_COLORS = {
     "Модератор": { r: 0, g: 255, b: 0 },
     "Администратор": { r: 0, g: 150, b: 255 },
     "Старший Администратор": { r: 255, g: 100, b: 0 },
     "Главный Администратор": { r: 255, g: 0, b: 0 },
-    "Основатель": { r: 255, g: 215, b: 0 },
-    "Без ранга": { r: 128, g: 128, b: 128 },
-    "Рядовой": { r: 128, g: 128, b: 128 },
-    "Младший Сержант": { r: 100, g: 149, b: 237 },
-    "Сержант": { r: 70, g: 130, b: 180 },
-    "Старший Сержант": { r: 0, g: 0, b: 139 },
-    "Старшина": { r: 0, g: 100, b: 0 },
-    "Прапорщик": { r: 255, g: 215, b: 0 },
-    "Старший Прапорщик": { r: 255, g: 165, b: 0 },
-    "Младший Лейтенант": { r: 0, g: 200, b: 200 },
-    "Лейтенант": { r: 0, g: 150, b: 200 },
-    "Старший Лейтенант": { r: 0, g: 100, b: 200 },
-    "Капитан": { r: 255, g: 0, b: 0 },
-    "Майор": { r: 220, g: 20, b: 60 },
-    "Подполковник": { r: 200, g: 0, b: 0 },
-    "Полковник": { r: 180, g: 0, b: 0 },
-    "Генерал-Майор": { r: 255, g: 100, b: 0 },
-    "Генерал-Лейтенант": { r: 255, g: 140, b: 0 },
-    "Генерал-Полковник": { r: 255, g: 180, b: 0 },
-    "Генерал Полиции": { r: 255, g: 215, b: 0 }
+    "Основатель": { r: 255, g: 215, b: 0 }
 };
 
-// ============ ПАПКА DATA (С ПРОВЕРКОЙ) ============
+// ============ ФУНКЦИИ ДЛЯ XP И УРОВНЕЙ ============
+function getLevel(xp) {
+    return math.floor(xp / 100) + 1;
+}
+
+function getXPForLevel(level) {
+    return (level - 1) * 100;
+}
+
+function addExp(userId, amount) {
+    if (!userExp[userId]) userExp[userId] = 0;
+    userExp[userId] += amount;
+    return { xp: userExp[userId], level: getLevel(userExp[userId]) };
+}
+
+function removeExp(userId, amount) {
+    if (!userExp[userId]) userExp[userId] = 0;
+    userExp[userId] = Math.max(0, userExp[userId] - amount);
+    return { xp: userExp[userId], level: getLevel(userExp[userId]) };
+}
+
+function getUserData(userId) {
+    const xp = userExp[userId] || 0;
+    return { xp: xp, level: getLevel(xp) };
+}
+
+// ============ ПАПКА DATA ============
 const DATA_DIR = path.join(__dirname, 'data');
 
 function ensureDataDir() {
@@ -58,26 +61,15 @@ function ensureDataDir() {
         if (!fs.existsSync(DATA_DIR)) {
             fs.mkdirSync(DATA_DIR, { recursive: true });
             console.log('✅ Папка data создана');
-        } else {
-            const stats = fs.statSync(DATA_DIR);
-            if (!stats.isDirectory()) {
-                fs.unlinkSync(DATA_DIR);
-                fs.mkdirSync(DATA_DIR, { recursive: true });
-                console.log('✅ Папка data создана (был файл)');
-            }
         }
-    } catch(e) {
-        console.error('❌ Ошибка при создании папки data:', e);
-    }
+    } catch(e) { console.error('❌ Ошибка:', e); }
 }
-
 ensureDataDir();
 
 function loadData() {
     try {
         if (fs.existsSync(path.join(DATA_DIR, 'admins.json'))) robloxAdmins = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'admins.json'), 'utf8'));
-        if (fs.existsSync(path.join(DATA_DIR, 'balances.json'))) userBalances = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'balances.json'), 'utf8'));
-        if (fs.existsSync(path.join(DATA_DIR, 'police_ranks.json'))) userPoliceRanks = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'police_ranks.json'), 'utf8'));
+        if (fs.existsSync(path.join(DATA_DIR, 'exp.json'))) userExp = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'exp.json'), 'utf8'));
         console.log('✅ Данные загружены');
     } catch(e) { console.error('Ошибка загрузки:', e); }
 }
@@ -85,8 +77,7 @@ function loadData() {
 function saveData() {
     try {
         fs.writeFileSync(path.join(DATA_DIR, 'admins.json'), JSON.stringify(robloxAdmins, null, 2));
-        fs.writeFileSync(path.join(DATA_DIR, 'balances.json'), JSON.stringify(userBalances, null, 2));
-        fs.writeFileSync(path.join(DATA_DIR, 'police_ranks.json'), JSON.stringify(userPoliceRanks, null, 2));
+        fs.writeFileSync(path.join(DATA_DIR, 'exp.json'), JSON.stringify(userExp, null, 2));
         console.log('✅ Данные сохранены');
     } catch(e) { console.error('Ошибка сохранения:', e); }
 }
@@ -100,25 +91,29 @@ app.use(cors());
 app.use(express.json());
 
 app.get('/api/admins', (req, res) => { res.json({ admins: robloxAdmins }); });
-app.get('/api/balance/:userId', (req, res) => { const id = parseInt(req.params.userId); res.json({ balance: userBalances[id] || 0 }); });
+app.get('/api/exp/:userId', (req, res) => { 
+    const id = parseInt(req.params.userId);
+    const data = getUserData(id);
+    res.json({ xp: data.xp, level: data.level });
+});
 app.get('/api/rank/:userId', (req, res) => {
     const id = parseInt(req.params.userId);
     const adminRank = robloxAdmins[id];
-    const policeRank = userPoliceRanks[id] || "Рядовой";
-    const displayRank = adminRank ? `${adminRank} | ${policeRank}` : policeRank;
-    const color = adminRank ? RANK_COLORS[adminRank] : RANK_COLORS[policeRank];
-    res.json({ rank: displayRank, color: color || { r: 128, g: 128, b: 128 }, isAdmin: !!adminRank });
+    const displayRank = adminRank || "Нет ранга";
+    const color = adminRank ? RANK_COLORS[adminRank] : { r: 128, g: 128, b: 128 };
+    res.json({ rank: displayRank, color: color, isAdmin: !!adminRank });
 });
-app.post('/api/update-balance', (req, res) => { const { userId, amount } = req.body; userBalances[userId] = (userBalances[userId] || 0) + amount; saveData(); res.json({ success: true }); });
-app.post('/api/set-police-rank', (req, res) => { 
-    const { userId, rank } = req.body; 
-    if (ALL_POLICE_RANKS.includes(rank)) { 
-        userPoliceRanks[userId] = rank; 
-        saveData(); 
-        res.json({ success: true }); 
-    } else { 
-        res.status(400).json({ error: 'Неверный ранг' }); 
-    } 
+app.post('/api/give-exp', (req, res) => { 
+    const { userId, amount } = req.body; 
+    const result = addExp(userId, amount);
+    saveData();
+    res.json({ success: true, xp: result.xp, level: result.level });
+});
+app.post('/api/remove-exp', (req, res) => { 
+    const { userId, amount } = req.body; 
+    const result = removeExp(userId, amount);
+    saveData();
+    res.json({ success: true, xp: result.xp, level: result.level });
 });
 
 const PORT = process.env.PORT || 3000;
@@ -136,10 +131,9 @@ const commandsData = [
     new SlashCommandBuilder().setName('removeadmin').setDescription('Удалить администратора').addIntegerOption(opt => opt.setName('robloxid').setDescription('Roblox ID').setRequired(true)),
     new SlashCommandBuilder().setName('adminlist').setDescription('Список администраторов'),
     new SlashCommandBuilder().setName('finduser').setDescription('Найти пользователя Roblox').addStringOption(opt => opt.setName('username').setDescription('Имя').setRequired(true)),
-    new SlashCommandBuilder().setName('bankgive').setDescription('Выдать монеты').addIntegerOption(opt => opt.setName('robloxid').setDescription('Roblox ID').setRequired(true)).addIntegerOption(opt => opt.setName('amount').setDescription('Кол-во').setRequired(true)),
-    new SlashCommandBuilder().setName('bankremove').setDescription('Забрать монеты').addIntegerOption(opt => opt.setName('robloxid').setDescription('Roblox ID').setRequired(true)).addIntegerOption(opt => opt.setName('amount').setDescription('Кол-во').setRequired(true)),
-    new SlashCommandBuilder().setName('bankinfo').setDescription('Баланс игрока').addIntegerOption(opt => opt.setName('robloxid').setDescription('Roblox ID').setRequired(true)),
-    new SlashCommandBuilder().setName('gamerole').setDescription('Выдать ранг полиции').addIntegerOption(opt => opt.setName('robloxid').setDescription('Roblox ID').setRequired(true)).addStringOption(opt => opt.setName('rank').setDescription('Ранг').setRequired(true).addChoices(...POLICE_RANKS_SELECT.map(r => ({ name: r, value: r }))))
+    new SlashCommandBuilder().setName('expgive').setDescription('Выдать опыт игроку').addIntegerOption(opt => opt.setName('robloxid').setDescription('Roblox ID').setRequired(true)).addIntegerOption(opt => opt.setName('amount').setDescription('Количество опыта').setRequired(true)),
+    new SlashCommandBuilder().setName('expremove').setDescription('Забрать опыт у игрока').addIntegerOption(opt => opt.setName('robloxid').setDescription('Roblox ID').setRequired(true)).addIntegerOption(opt => opt.setName('amount').setDescription('Количество опыта').setRequired(true)),
+    new SlashCommandBuilder().setName('expinfo').setDescription('Информация об опыте игрока').addIntegerOption(opt => opt.setName('robloxid').setDescription('Roblox ID').setRequired(true))
 ];
 
 async function registerCommands() {
@@ -147,10 +141,8 @@ async function registerCommands() {
     try {
         console.log('🧹 Очищаю глобальные команды...');
         await rest.put(Routes.applicationCommands(client.user.id), { body: [] });
-        
         console.log('📝 Регистрирую команды для сервера...');
         const result = await rest.put(Routes.applicationGuildCommands(client.user.id, TEST_GUILD_ID), { body: commandsData });
-        
         console.log(`✅ ЗАРЕГИСТРИРОВАНО ${result.length} КОМАНД:`);
         result.forEach(cmd => console.log(`   /${cmd.name}`));
     } catch (error) { console.error('❌ ОШИБКА:', error); }
@@ -211,25 +203,22 @@ client.on('interactionCreate', async interaction => {
             interaction.reply({ content: '❌ Ошибка поиска!', ephemeral: true }); 
         }
     }
-    else if (commandName === 'bankgive') { 
-        userBalances[robloxId] = (userBalances[robloxId] || 0) + amount; 
-        saveData(); 
-        interaction.reply({ content: `💰 Выдано ${amount} монет. Новый баланс: ${userBalances[robloxId]} 💎`, ephemeral: true }); 
+    else if (commandName === 'expgive') { 
+        const result = addExp(robloxId, amount);
+        saveData();
+        const info = await getRobloxUserInfo(robloxId);
+        interaction.reply({ content: `✨ ${info?.name || robloxId} получил ${amount} XP!\n📊 Всего XP: ${result.xp}\n🎚️ Уровень: ${result.level}`, ephemeral: true });
     }
-    else if (commandName === 'bankremove') { 
-        userBalances[robloxId] = Math.max(0, (userBalances[robloxId] || 0) - amount); 
-        saveData(); 
-        interaction.reply({ content: `💰 Забрано ${amount} монет. Новый баланс: ${userBalances[robloxId]} 💎`, ephemeral: true }); 
+    else if (commandName === 'expremove') { 
+        const result = removeExp(robloxId, amount);
+        saveData();
+        const info = await getRobloxUserInfo(robloxId);
+        interaction.reply({ content: `✨ У ${info?.name || robloxId} забрано ${amount} XP!\n📊 Всего XP: ${result.xp}\n🎚️ Уровень: ${result.level}`, ephemeral: true });
     }
-    else if (commandName === 'bankinfo') { 
-        interaction.reply({ content: `💰 Баланс: ${userBalances[robloxId] || 0} 💎`, ephemeral: true }); 
-    }
-    else if (commandName === 'gamerole') { 
-        const rank = interaction.options.getString('rank'); 
-        userPoliceRanks[robloxId] = rank; 
-        saveData(); 
-        const info = await getRobloxUserInfo(robloxId); 
-        interaction.reply({ content: `👮‍♂️ ${info?.name || robloxId} получил ранг **${rank}**!`, ephemeral: true }); 
+    else if (commandName === 'expinfo') { 
+        const data = getUserData(robloxId);
+        const info = await getRobloxUserInfo(robloxId);
+        interaction.reply({ content: `📊 **${info?.name || robloxId}**\n✨ XP: ${data.xp}\n🎚️ Уровень: ${data.level}`, ephemeral: true });
     }
 });
 
