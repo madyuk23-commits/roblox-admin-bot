@@ -7,10 +7,7 @@ const path = require('path');
 // ============ НАСТРОЙКА ============
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const ALLOWED_USERS = (process.env.ALLOWED_USERS || '').split(',').map(id => id.trim()).filter(id => id.length > 0);
-
-// ★★★★★ ВСТАВЬТЕ СЮДА ВАШ РЕАЛЬНЫЙ ID СЕРВЕРА (ТОЛЬКО ЦИФРЫ!) ★★★★★
 const TEST_GUILD_ID = "1502941635154149480"; // ← ЗАМЕНИТЕ НА ВАШ ID!
-// ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
 
 console.log(`🚀 Запуск бота...`);
 console.log(`📡 Сервер ID: ${TEST_GUILD_ID}`);
@@ -30,7 +27,7 @@ const RANK_COLORS = {
     "Основатель": { r: 255, g: 215, b: 0 }
 };
 
-// ============ ФУНКЦИИ ДЛЯ XP И УРОВНЕЙ ============
+// ============ ФУНКЦИИ XP ============
 function getLevel(xp) {
     return Math.floor(xp / 100) + 1;
 }
@@ -38,12 +35,6 @@ function getLevel(xp) {
 function addExp(userId, amount) {
     if (!userExp[userId]) userExp[userId] = 0;
     userExp[userId] += amount;
-    return { xp: userExp[userId], level: getLevel(userExp[userId]) };
-}
-
-function removeExp(userId, amount) {
-    if (!userExp[userId]) userExp[userId] = 0;
-    userExp[userId] = Math.max(0, userExp[userId] - amount);
     return { xp: userExp[userId], level: getLevel(userExp[userId]) };
 }
 
@@ -98,19 +89,13 @@ app.get('/api/exp/:userId', (req, res) => {
 app.get('/api/rank/:userId', (req, res) => {
     const id = parseInt(req.params.userId);
     const adminRank = robloxAdmins[id];
-    const displayRank = adminRank || "Нет ранга";
+    const displayRank = adminRank || "Игрок";
     const color = adminRank ? RANK_COLORS[adminRank] : { r: 128, g: 128, b: 128 };
     res.json({ rank: displayRank, color: color, isAdmin: !!adminRank });
 });
 app.post('/api/give-exp', (req, res) => { 
     const { userId, amount } = req.body; 
     const result = addExp(userId, amount);
-    saveData();
-    res.json({ success: true, xp: result.xp, level: result.level });
-});
-app.post('/api/remove-exp', (req, res) => { 
-    const { userId, amount } = req.body; 
-    const result = removeExp(userId, amount);
     saveData();
     res.json({ success: true, xp: result.xp, level: result.level });
 });
@@ -131,7 +116,6 @@ const commandsData = [
     new SlashCommandBuilder().setName('adminlist').setDescription('Список администраторов'),
     new SlashCommandBuilder().setName('finduser').setDescription('Найти пользователя Roblox').addStringOption(opt => opt.setName('username').setDescription('Имя').setRequired(true)),
     new SlashCommandBuilder().setName('expgive').setDescription('Выдать опыт игроку').addIntegerOption(opt => opt.setName('robloxid').setDescription('Roblox ID').setRequired(true)).addIntegerOption(opt => opt.setName('amount').setDescription('Количество опыта').setRequired(true)),
-    new SlashCommandBuilder().setName('expremove').setDescription('Забрать опыт у игрока').addIntegerOption(opt => opt.setName('robloxid').setDescription('Roblox ID').setRequired(true)).addIntegerOption(opt => opt.setName('amount').setDescription('Количество опыта').setRequired(true)),
     new SlashCommandBuilder().setName('expinfo').setDescription('Информация об опыте игрока').addIntegerOption(opt => opt.setName('robloxid').setDescription('Roblox ID').setRequired(true))
 ];
 
@@ -146,9 +130,7 @@ async function registerCommands() {
         
         console.log(`✅ ЗАРЕГИСТРИРОВАНО ${result.length} КОМАНД:`);
         result.forEach(cmd => console.log(`   /${cmd.name}`));
-    } catch (error) {
-        console.error('❌ ОШИБКА:', error);
-    }
+    } catch (error) { console.error('❌ ОШИБКА:', error); }
 }
 
 client.once('ready', async () => {
@@ -211,12 +193,6 @@ client.on('interactionCreate', async interaction => {
         saveData();
         const info = await getRobloxUserInfo(robloxId);
         interaction.reply({ content: `✨ ${info?.name || robloxId} получил ${amount} XP!\n📊 Всего XP: ${result.xp}\n🎚️ Уровень: ${result.level}`, ephemeral: true });
-    }
-    else if (commandName === 'expremove') { 
-        const result = removeExp(robloxId, amount);
-        saveData();
-        const info = await getRobloxUserInfo(robloxId);
-        interaction.reply({ content: `✨ У ${info?.name || robloxId} забрано ${amount} XP!\n📊 Всего XP: ${result.xp}\n🎚️ Уровень: ${result.level}`, ephemeral: true });
     }
     else if (commandName === 'expinfo') { 
         const data = getUserData(robloxId);
